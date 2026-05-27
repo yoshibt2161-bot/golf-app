@@ -199,6 +199,7 @@
         </div>
     </div>
     <button class="btn primary" onclick="goToDeclaration()">次へ → 目標スコア宣言</button>
+    <button class="btn secondary" onclick="resetGame()">🔄 リセット</button>
 </div>
 
 <!-- ===== SCREEN 2: Target Declaration ===== -->
@@ -285,6 +286,15 @@ let game = {
 };
 let currentView = 'grid';
 let currentPlayerTab = 0;
+
+function resetGame() {
+    if (!confirm('ゲームをリセットしますか？\n入力済みのデータはすべて消えます。')) return;
+    game = { players: [], coursePar: 72, targets: [], scores: [], hiddenHoles: [] };
+    document.getElementById('player-count').value = '4';
+    document.getElementById('course-par').value = '72';
+    updatePlayerInputs();
+    goTo('screen-setup');
+}
 
 // ============================================================
 // Helpers
