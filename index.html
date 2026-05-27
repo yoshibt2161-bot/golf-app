@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>隠しホールゴルフ</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+            background: linear-gradient(160deg, #5aaa68 0%, #7acc84 100%);
+            color: #fff;
+            min-height: 100vh;
+        }
+        .screen { display: none; padding: 16px; max-width: 640px; margin: 0 auto; padding-bottom: 40px; }
+        .screen.active { display: block; }
+        h1 { text-align: center; margin-bottom: 20px; font-size: 1.4em; letter-spacing: 0.05em; }
+        h2 { margin-bottom: 12px; font-size: 1.05em; color: #e8ffe8; }
+        .card {
+            background: rgba(0,0,0,0.18);
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 14px;
+        }
+        label { display: block; margin-bottom: 4px; font-size: 0.82em; color: #d8f8d8; }
+        input[type="text"], input[type="number"], select {
+            width: 100%; padding: 10px 12px; border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.18); color: #fff;
+            font-size: 1em; margin-bottom: 10px; outline: none;
+        }
+        input:focus, select:focus { border-color: #fff; background: rgba(255,255,255,0.28); }
+        input[type="number"] { text-align: center; }
+        select option { background: #3a8a4a; color: #fff; }
+        .btn {
+            display: block; width: 100%; padding: 14px; border-radius: 10px;
+            border: none; background: rgba(0,0,0,0.3); color: #fff;
+            font-size: 1.05em; font-weight: 600; cursor: pointer;
+            margin-top: 8px; transition: background 0.15s, transform 0.1s;
+        }
+        .btn:hover { background: rgba(0,0,0,0.42); }
+        .btn:active { transform: scale(0.98); }
+        .btn.primary { background: rgba(0,80,30,0.6); }
+        .btn.primary:hover { background: rgba(0,100,40,0.75); }
+        .btn.secondary { background: rgba(255,255,255,0.14); font-weight: 400; font-size: 0.95em; }
+        .btn.secondary:hover { background: rgba(255,255,255,0.22); }
+        .btn.stop { background: rgba(180,40,40,0.75); font-size: 1.2em; letter-spacing: 0.05em; }
+        .btn.stop:hover { background: rgba(210,50,50,0.88); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Course par row */
+        .par-row { display: flex; align-items: center; gap: 12px; }
+        .par-row input { width: 90px; margin-bottom: 0; flex-shrink: 0; }
+        .par-row-note { font-size: 0.82em; color: #d8f8d8; line-height: 1.4; }
+
+        /* View toggle & tabs */
+        .view-toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+        .tab-btn {
+            flex: 1; padding: 8px; text-align: center; border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.85);
+            font-size: 0.88em; cursor: pointer;
+        }
+        .tab-btn.active { background: rgba(0,0,0,0.35); border-color: rgba(255,255,255,0.6); color: #fff; font-weight: 600; }
+        .player-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+        .player-tabs .tab-btn { flex: none; padding: 6px 14px; }
+
+        /* Grid score table */
+        .score-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .score-table { width: 100%; border-collapse: collapse; font-size: 0.85em; white-space: nowrap; }
+        .score-table th, .score-table td { padding: 5px 3px; text-align: center; border: 1px solid rgba(255,255,255,0.15); }
+        .score-table thead th { background: rgba(0,0,0,0.3); }
+        .score-table tfoot td { background: rgba(0,0,0,0.3); font-weight: 700; font-size: 0.8em; }
+        .score-table .hole-num { color: #d8f8d8; }
+        .score-table input {
+            width: 44px; padding: 4px 2px; border-radius: 5px;
+            background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+            color: #fff; text-align: center; font-size: 0.9em; margin: 0;
+        }
+        .score-table input:focus { border-color: #fff; background: rgba(255,255,255,0.28); outline: none; }
+
+        /* Stepper (player tab view) */
+        .stepper-list { display: flex; flex-direction: column; gap: 6px; }
+        .stepper-row {
+            display: flex; align-items: center;
+            background: rgba(0,0,0,0.15); border-radius: 10px;
+            padding: 8px 12px; gap: 8px;
+        }
+        .stepper-hole { width: 52px; }
+        .stepper-hole .h-label { font-size: 0.7em; opacity: 0.7; }
+        .stepper-hole .h-num { font-size: 1.25em; font-weight: 700; }
+        .stepper-btn {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: none; background: rgba(255,255,255,0.2);
+            color: #fff; font-size: 1.4em; font-weight: bold;
+            cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+            line-height: 1; transition: background 0.1s, transform 0.1s;
+        }
+        .stepper-btn:hover { background: rgba(255,255,255,0.32); }
+        .stepper-btn:active { transform: scale(0.88); }
+        .stepper-val {
+            flex: 1; text-align: center;
+            font-size: 1.35em; font-weight: 700;
+        }
+        .stepper-val.under { color: #90ee90; }
+        .stepper-val.ev    { color: #ffd700; }
+        .stepper-val.over  { color: #ffaaaa; }
+        .stepper-val.empty { color: rgba(255,255,255,0.3); font-size: 1.1em; }
+
+        /* Mini totals */
+        .mini-totals { display: flex; flex-wrap: wrap; gap: 8px; }
+        .mini-total-item { flex: 1; min-width: 80px; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 8px; text-align: center; }
+        .mini-total-name { font-size: 0.75em; color: #d8f8d8; margin-bottom: 2px; }
+        .mini-total-score { font-size: 1.25em; font-weight: 700; }
+        .mini-total-rel { font-size: 0.72em; color: rgba(255,255,255,0.6); margin-top: 1px; }
+
+        /* Roulette */
+        .roulette-box { text-align: center; padding: 10px 0; }
+        .roulette-number {
+            font-size: 4em; font-weight: 900; height: 100px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.3); border-radius: 16px; margin: 16px 0;
+            color: #90ee90; text-shadow: 0 0 20px rgba(100,255,100,0.5);
+        }
+        .hole-badges { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin: 14px 0; }
+        .hole-badge {
+            width: 40px; height: 40px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.85em; font-weight: 600;
+            background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.25);
+            transition: all 0.4s;
+        }
+        .hole-badge.lit { background: rgba(255,215,0,0.2); border-color: rgba(255,215,0,0.5); color: #ffd700; }
+        .hole-badge.selected { background: linear-gradient(135deg,#ffd700,#ffa500); border-color: #ffa500; color:#000; font-weight:900; transform:scale(1.15); box-shadow:0 0 12px rgba(255,215,0,.6); }
+        .hidden-holes-announce { font-size: 1.05em; margin: 12px 0 6px; color: #ffd700; font-weight: 600; }
+        .hidden-holes-note { font-size: 0.82em; color: #d8f8d8; }
+
+        /* Results */
+        .result-card { background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.2); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+        .result-card.rank-1 { border-color: rgba(255,215,0,.6); background: rgba(255,215,0,.1); }
+        .result-card.rank-2 { border-color: rgba(192,192,192,.4); }
+        .result-card.rank-3 { border-color: rgba(205,127,50,.4); }
+        .result-card.dobon  { border-color: rgba(255,80,80,.3); background: rgba(255,0,0,.07); }
+        .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .result-name { font-size: 1.1em; font-weight: 700; }
+        .result-rank { font-size: 1em; font-weight: 700; }
+        .result-rank.gold   { color: #ffd700; }
+        .result-rank.silver { color: #e0e0e0; }
+        .result-rank.bronze { color: #cd7f32; }
+        .result-rank.safe   { color: #90ee90; }
+        .result-rank.dlabel { color: #ff9090; }
+        .result-main { font-size: 2em; font-weight: 900; margin: 6px 0; }
+        .result-main.plus  { color: #90ee90; }
+        .result-main.zero  { color: #ffd700; }
+        .result-main.dmain { color: #ff9090; }
+        .result-detail { font-size: 0.8em; color: rgba(255,255,255,0.72); display: flex; flex-wrap: wrap; gap: 6px; }
+        .result-detail span { background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 10px; }
+        .hidden-info { font-size: 0.82em; color: rgba(255,255,255,0.85); margin-bottom: 14px; padding: 8px 12px; background: rgba(255,215,0,.1); border-radius: 8px; border: 1px solid rgba(255,215,0,.3); }
+        .info-text { font-size: 0.82em; color: #d8f8d8; margin-bottom: 12px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+<!-- ===== SCREEN 1: Setup ===== -->
+<div id="screen-setup" class="screen active">
+    <h1>⛳ 隠しホールゴルフ</h1>
+    <div class="card">
+        <h2>👥 プレイヤー設定</h2>
+        <label>人数</label>
+        <select id="player-count" onchange="updatePlayerInputs()">
+            <option value="2">2人</option>
+            <option value="3">3人</option>
+            <option value="4" selected>4人</option>
+            <option value="5">5人</option>
+            <option value="6">6人</option>
+            <option value="7">7人</option>
+            <option value="8">8人</option>
+            <option value="9">9人</option>
+            <option value="10">10人</option>
+            <option value="11">11人</option>
+            <option value="12">12人</option>
+            <option value="13">13人</option>
+            <option value="14">14人</option>
+            <option value="15">15人</option>
+            <option value="16">16人</option>
+            <option value="17">17人</option>
+            <option value="18">18人</option>
+            <option value="19">19人</option>
+            <option value="20">20人</option>
+        </select>
+        <div id="player-names"></div>
+    </div>
+    <div class="card">
+        <h2>🏌️ コースパー</h2>
+        <div class="par-row">
+            <input type="number" id="course-par" value="72" min="54" max="90">
+            <span class="par-row-note">スコアは各ホールのパーに対する<br>+/− で入力します</span>
+        </div>
+    </div>
+    <button class="btn primary" onclick="goToDeclaration()">次へ → 目標スコア宣言</button>
+</div>
+
+<!-- ===== SCREEN 2: Target Declaration ===== -->
+<div id="screen-declaration" class="screen">
+    <h1>🎯 目標スコア宣言</h1>
+    <div class="card">
+        <p class="info-text">ラウンド前に各自の目標スコア（実打数）を宣言してください。<br>目標以上ならセーフ、未満はドボン！</p>
+        <div id="declaration-inputs"></div>
+    </div>
+    <button class="btn primary" onclick="goToScores()">ラウンド開始 →</button>
+    <button class="btn secondary" onclick="goTo('screen-setup')">← 戻る</button>
+</div>
+
+<!-- ===== SCREEN 3: Score Entry ===== -->
+<div id="screen-scores" class="screen">
+    <h1>📝 スコア入力</h1>
+    <div class="view-toggle">
+        <div class="tab-btn active" id="view-grid-btn" onclick="switchView('grid')">全体表示</div>
+        <div class="tab-btn" id="view-player-btn" onclick="switchView('player')">プレイヤー別</div>
+    </div>
+
+    <!-- Grid view -->
+    <div id="view-grid">
+        <div class="card" style="padding:10px">
+            <div class="score-scroll">
+                <table class="score-table" id="score-table"></table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player tab view -->
+    <div id="view-player" style="display:none">
+        <div class="player-tabs" id="player-tabs"></div>
+        <div class="card" style="padding:10px 12px">
+            <div class="stepper-list" id="stepper-list"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>現在の合計</h2>
+        <div class="mini-totals" id="mini-totals"></div>
+    </div>
+    <button class="btn primary" onclick="goToRoulette()">抽選へ →</button>
+    <button class="btn secondary" onclick="goTo('screen-declaration')">← 戻る</button>
+</div>
+
+<!-- ===== SCREEN 4: Roulette ===== -->
+<div id="screen-roulette" class="screen">
+    <h1>🎰 隠しホール抽選</h1>
+    <div class="card">
+        <div class="roulette-box">
+            <p class="info-text" style="text-align:center">4ホールをランダムに決定します<br>そのホールのスコアはパーとして計算されます</p>
+            <div class="roulette-number" id="roulette-display">？</div>
+            <div class="hole-badges" id="hole-badges"></div>
+            <div id="roulette-result" style="display:none">
+                <div class="hidden-holes-announce" id="selected-holes-text"></div>
+                <div class="hidden-holes-note">これらのホールのスコアはパー（±0）として計算されます</div>
+            </div>
+            <button class="btn primary" id="roulette-btn" onclick="startRoulette()" style="margin-top:16px">🎲 抽選スタート！</button>
+            <button class="btn primary" id="result-btn" style="display:none" onclick="goToResults()">結果を見る →</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== SCREEN 5: Results ===== -->
+<div id="screen-results" class="screen">
+    <h1>🏆 結果発表</h1>
+    <div class="hidden-info" id="result-hidden-info"></div>
+    <div id="results-container"></div>
+    <button class="btn primary" onclick="resetGame()">もう一度プレイ</button>
+    <button class="btn secondary" onclick="goTo('screen-roulette')">← 抽選画面へ</button>
+</div>
+
+<script>
+// ============================================================
+// Game state
+// ============================================================
+let game = {
+    players: [],
+    coursePar: 72,
+    targets: [],
+    scores: [],      // [player][hole] = relative score (+/−), null = not entered
+    hiddenHoles: []
+};
+let currentView = 'grid';
+let currentPlayerTab = 0;
+
+// ============================================================
+// Helpers
+// ============================================================
+function fmt(v) {
+    if (v === null) return '−';
+    if (v === 0) return 'E';
+    return v > 0 ? `+${v}` : `${v}`;
+}
+function cls(v) {
+    if (v === null) return 'empty';
+    if (v < 0) return 'under';
+    if (v === 0) return 'ev';
+    return 'over';
+}
+function inputColor(v) {
+    if (v === null) return '#fff';
+    if (v < 0) return '#90ee90';
+    if (v === 0) return '#ffd700';
+    return '#ffaaaa';
+}
+
+// ============================================================
+// Setup
+// ============================================================
+function updatePlayerInputs() {
+    const count = parseInt(document.getElementById('player-count').value);
+    const container = document.getElementById('player-names');
+    container.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+        const div = document.createElement('div');
+        div.innerHTML = `
+            <label>プレイヤー ${i + 1}</label>
+            <input type="text" id="pname-${i}" value="${game.players[i] || ''}" placeholder="名前を入力">
+        `;
+        container.appendChild(div);
+    }
+}
+
+function goToDeclaration() {
+    const count = parseInt(document.getElementById('player-count').value);
+    game.coursePar = parseInt(document.getElementById('course-par').value) || 72;
+    game.players = [];
+    for (let i = 0; i < count; i++) {
+        const name = document.getElementById(`pname-${i}`)?.value?.trim() || `プレイヤー${i+1}`;
+        game.players.push(name);
+    }
+
+    const container = document.getElementById('declaration-inputs');
+    container.innerHTML = '';
+    game.players.forEach((name, i) => {
+        const div = document.createElement('div');
+        div.innerHTML = `
+            <label>${name}の目標スコア（コースパー: ${game.coursePar}）</label>
+            <input type="number" id="target-${i}" value="${game.targets[i] || ''}" placeholder="例: 92" min="54" max="200">
+        `;
+        container.appendChild(div);
+    });
+    goTo('screen-declaration');
+}
+
+// ============================================================
+// Score entry setup
+// ============================================================
+function goToScores() {
+    game.targets = [];
+    for (let i = 0; i < game.players.length; i++) {
+        const val = parseInt(document.getElementById(`target-${i}`)?.value);
+        if (!val || isNaN(val)) {
+            alert(`${game.players[i]}の目標スコアを入力してください`);
+            return;
+        }
+        game.targets.push(val);
+    }
+    game.players.forEach((_, p) => {
+        if (!game.scores[p]) game.scores[p] = Array(18).fill(null);
+    });
+    buildGridTable();
+    buildPlayerTabs();
+    renderStepperList(0);
+    updateMiniTotals();
+    goTo('screen-scores');
+}
+
+function buildGridTable() {
+    const n = game.players.length;
+    const table = document.getElementById('score-table');
+    let html = '<thead><tr><th class="hole-num">H</th>';
+    game.players.forEach(name => {
+        html += `<th>${name.length > 4 ? name.slice(0, 4) + '…' : name}</th>`;
+    });
+    html += '</tr></thead><tbody>';
+    for (let h = 0; h < 18; h++) {
+        html += `<tr><td class="hole-num">${h + 1}</td>`;
+        for (let p = 0; p < n; p++) {
+            const v = game.scores[p][h];
+            const col = inputColor(v);
+            html += `<td><input type="number" min="-10" max="15"
+                value="${v !== null ? v : ''}"
+                id="gs-${p}-${h}"
+                inputmode="numeric"
+                style="color:${col}"
+                onchange="syncScore(${p},${h},this.value)"></td>`;
+        }
+        html += '</tr>';
+    }
+    html += '</tbody><tfoot><tr><td>計</td>';
+    for (let p = 0; p < n; p++) html += `<td id="gtotal-${p}">−</td>`;
+    html += '</tr></tfoot>';
+    table.innerHTML = html;
+    for (let p = 0; p < n; p++) refreshGridTotal(p);
+}
+
+function buildPlayerTabs() {
+    const bar = document.getElementById('player-tabs');
+    bar.innerHTML = '';
+    game.players.forEach((name, i) => {
+        const btn = document.createElement('div');
+        btn.className = 'tab-btn' + (i === 0 ? ' active' : '');
+        btn.id = `ptab-${i}`;
+        btn.textContent = name;
+        btn.onclick = () => switchPlayerTab(i);
+        bar.appendChild(btn);
+    });
+}
+
+function renderStepperList(p) {
+    currentPlayerTab = p;
+    const list = document.getElementById('stepper-list');
+    list.innerHTML = '';
+    for (let h = 0; h < 18; h++) {
+        const v = game.scores[p][h];
+        const row = document.createElement('div');
+        row.className = 'stepper-row';
+        row.innerHTML = `
+            <div class="stepper-hole">
+                <div class="h-label">ホール</div>
+                <div class="h-num">${h + 1}</div>
+            </div>
+            <button class="stepper-btn" onclick="stepScore(${p},${h},-1)">−</button>
+            <div class="stepper-val ${cls(v)}" id="sv-${h}">${v !== null ? fmt(v) : '−'}</div>
+            <button class="stepper-btn" onclick="stepScore(${p},${h},1)">＋</button>
+        `;
+        list.appendChild(row);
+    }
+}
+
+function switchPlayerTab(p) {
+    currentPlayerTab = p;
+    document.querySelectorAll('#player-tabs .tab-btn').forEach((b, i) => b.classList.toggle('active', i === p));
+    renderStepperList(p);
+}
+
+// ============================================================
+// Score sync
+// ============================================================
+function syncScore(p, h, val) {
+    const v = val === '' ? null : parseInt(val);
+    game.scores[p][h] = isNaN(v) ? null : v;
+    const inp = document.getElementById(`gs-${p}-${h}`);
+    if (inp) inp.style.color = inputColor(v);
+    refreshGridTotal(p);
+    if (currentView === 'player' && currentPlayerTab === p) {
+        const el = document.getElementById(`sv-${h}`);
+        if (el) { el.textContent = v !== null ? fmt(v) : '−'; el.className = 'stepper-val ' + cls(v); }
+    }
+    updateMiniTotals();
+}
+
+function stepScore(p, h, delta) {
+    const cur = game.scores[p][h] ?? 0;
+    const nv = Math.max(-10, Math.min(15, cur + delta));
+    game.scores[p][h] = nv;
+    const el = document.getElementById(`sv-${h}`);
+    if (el) { el.textContent = fmt(nv); el.className = 'stepper-val ' + cls(nv); }
+    const gi = document.getElementById(`gs-${p}-${h}`);
+    if (gi) { gi.value = nv; gi.style.color = inputColor(nv); }
+    refreshGridTotal(p);
+    updateMiniTotals();
+}
+
+function refreshGridTotal(p) {
+    let sum = 0, complete = true;
+    for (let h = 0; h < 18; h++) {
+        if (game.scores[p][h] === null) { complete = false; break; }
+        sum += game.scores[p][h];
+    }
+    const el = document.getElementById(`gtotal-${p}`);
+    if (el) el.textContent = complete ? `${game.coursePar + sum}(${fmt(sum)})` : '−';
+}
+
+function updateMiniTotals() {
+    const c = document.getElementById('mini-totals');
+    c.innerHTML = '';
+    game.players.forEach((name, p) => {
+        let sum = 0, count = 0;
+        for (let h = 0; h < 18; h++) {
+            if (game.scores[p][h] !== null) { sum += game.scores[p][h]; count++; }
+        }
+        const complete = count === 18;
+        const div = document.createElement('div');
+        div.className = 'mini-total-item';
+        div.innerHTML = `
+            <div class="mini-total-name">${name}</div>
+            <div class="mini-total-score">${complete ? game.coursePar + sum : '−'}</div>
+            <div class="mini-total-rel">${count > 0 ? fmt(sum) : ''}</div>
+        `;
+        c.appendChild(div);
+    });
+}
+
+function switchView(view) {
+    currentView = view;
+    document.getElementById('view-grid').style.display = view === 'grid' ? 'block' : 'none';
+    document.getElementById('view-player').style.display = view === 'player' ? 'block' : 'none';
+    document.getElementById('view-grid-btn').classList.toggle('active', view === 'grid');
+    document.getElementById('view-player-btn').classList.toggle('active', view === 'player');
+}
+
+// ============================================================
+// Roulette
+// ============================================================
+function goToRoulette() {
+    for (let p = 0; p < game.players.length; p++) {
+        for (let h = 0; h < 18; h++) {
+            if (game.scores[p][h] === null) {
+                alert(`${game.players[p]}の${h + 1}番ホールのスコアが未入力です`);
+                return;
+            }
+        }
+    }
+    game.hiddenHoles = [];
+    _selectedSoFar = [];
+    _currentShowing = 1;
+    const disp = document.getElementById('roulette-display');
+    disp.textContent = '？'; disp.style.color = '#90ee90';
+    document.getElementById('roulette-result').style.display = 'none';
+    const rb = document.getElementById('roulette-btn');
+    rb.style.display = 'block'; rb.disabled = false;
+    rb.textContent = '🎲 抽選スタート！'; rb.className = 'btn primary'; rb.onclick = startRoulette;
+    document.getElementById('result-btn').style.display = 'none';
+
+    const bc = document.getElementById('hole-badges');
+    bc.innerHTML = '';
+    for (let i = 1; i <= 18; i++) {
+        const b = document.createElement('div');
+        b.className = 'hole-badge'; b.id = `badge-${i}`; b.textContent = i;
+        bc.appendChild(b);
+    }
+    goTo('screen-roulette');
+}
+
+let _spinning = false;
+let _currentShowing = 1;
+let _selectedSoFar = [];
+
+function startRoulette() {
+    _spinning = true;
+    const btn = document.getElementById('roulette-btn');
+    btn.textContent = '🛑 止める！　(1/4)';
+    btn.className = 'btn stop';
+    btn.onclick = stopOneHole;
+    document.getElementById('roulette-display').style.color = '#90ee90';
+    spinLoop();
+}
+
+function spinLoop() {
+    if (!_spinning) return;
+    // Cycle through unselected holes only
+    let next = _currentShowing, tries = 0;
+    do { next = (next % 18) + 1; tries++; }
+    while (_selectedSoFar.includes(next) && tries < 18);
+    _currentShowing = next;
+
+    document.getElementById('roulette-display').textContent = _currentShowing;
+
+    // Light up only the currently-showing badge
+    document.querySelectorAll('.hole-badge:not(.selected)').forEach(b => b.classList.remove('lit'));
+    const lb = document.getElementById(`badge-${_currentShowing}`);
+    if (lb) lb.classList.add('lit');
+
+    setTimeout(spinLoop, 80);
+}
+
+function stopOneHole() {
+    _spinning = false;
+    document.querySelectorAll('.hole-badge:not(.selected)').forEach(b => b.classList.remove('lit'));
+
+    const hole = _currentShowing;
+    _selectedSoFar.push(hole);
+    const count = _selectedSoFar.length;
+
+    const badge = document.getElementById(`badge-${hole}`);
+    if (badge) { badge.classList.remove('lit'); badge.classList.add('selected'); }
+
+    const disp = document.getElementById('roulette-display');
+    disp.textContent = `${hole}番！`;
+    disp.style.color = '#ffd700';
+
+    const btn = document.getElementById('roulette-btn');
+    btn.disabled = true;
+    btn.className = 'btn';
+
+    if (count >= 4) {
+        // All 4 done
+        game.hiddenHoles = [..._selectedSoFar].sort((a, b) => a - b);
+        btn.textContent = '確定！';
+        document.getElementById('selected-holes-text').textContent =
+            '🎯 隠しホール: ' + game.hiddenHoles.map(h => `${h}番`).join(' ・ ');
+        document.getElementById('roulette-result').style.display = 'block';
+        document.getElementById('result-btn').style.display = 'block';
+        setTimeout(() => { disp.textContent = '確定！'; }, 500);
+    } else {
+        // Pause then spin again for next hole
+        btn.textContent = `${count}/4 確定　あと ${4 - count} ホール`;
+        setTimeout(() => {
+            disp.style.color = '#90ee90';
+            btn.textContent = `🛑 止める！　(${count + 1}/4)`;
+            btn.className = 'btn stop';
+            btn.disabled = false;
+            btn.onclick = stopOneHole;
+            _spinning = true;
+            spinLoop();
+        }, 1000);
+    }
+}
+
+// ============================================================
+// Results
+// ============================================================
+function goToResults() {
+    const hidden = game.hiddenHoles;
+    const results = game.players.map((name, p) => {
+        const scores = game.scores[p];
+        const totalRel = scores.reduce((a, b) => a + b, 0);
+        const totalActual = game.coursePar + totalRel;
+        // Hidden holes replaced with par (0): remove their relative scores
+        const hiddenRel = hidden.reduce((sum, h) => sum + scores[h - 1], 0);
+        const adjusted = game.coursePar + (totalRel - hiddenRel);
+        const diff = adjusted - game.targets[p];
+        return { name, target: game.targets[p], totalActual, adjusted, diff, dobon: diff < 0 };
+    });
+
+    // Non-dobon: ascending diff (closer to target = better). Dobon: descending diff (less negative = less dobon)
+    results.sort((a, b) => {
+        if (a.dobon !== b.dobon) return a.dobon ? 1 : -1;
+        return a.dobon ? b.diff - a.diff : a.diff - b.diff;
+    });
+
+    document.getElementById('result-hidden-info').innerHTML =
+        `🎰 隠しホール: ${hidden.map(h => `<strong>${h}番</strong>`).join(' ・ ')} のスコアをパー（±0）として計算`;
+
+    const c = document.getElementById('results-container');
+    c.innerHTML = '';
+    let rank = 0;
+    results.forEach(r => {
+        if (!r.dobon) rank++;
+        const cardCls = 'result-card' + (r.dobon ? ' dobon' : rank === 1 ? ' rank-1' : rank === 2 ? ' rank-2' : rank === 3 ? ' rank-3' : '');
+        let rankText, rankCls;
+        if (r.dobon)    { rankText = '💥 ドボン'; rankCls = 'dlabel'; }
+        else if (rank === 1) { rankText = '🥇 1位'; rankCls = 'gold'; }
+        else if (rank === 2) { rankText = '🥈 2位'; rankCls = 'silver'; }
+        else if (rank === 3) { rankText = '🥉 3位'; rankCls = 'bronze'; }
+        else             { rankText = `${rank}位`; rankCls = 'safe'; }
+
+        const mainCls  = r.dobon ? 'dmain' : r.diff === 0 ? 'zero' : 'plus';
+        const mainText = r.dobon ? `${r.diff}` : r.diff === 0 ? '±0 打' : `+${r.diff} 打`;
+
+        const div = document.createElement('div');
+        div.className = cardCls;
+        div.innerHTML = `
+            <div class="result-header">
+                <span class="result-name">${r.name}</span>
+                <span class="result-rank ${rankCls}">${rankText}</span>
+            </div>
+            <div class="result-main ${mainCls}">${mainText}</div>
+            <div class="result-detail">
+                <span>目標 ${r.target}</span>
+                <span>実スコア ${r.totalActual}</span>
+                <span>調整後 ${r.adjusted}</span>
+                ${r.dobon
+                    ? `<span style="color:#ff9090">目標まであと ${Math.abs(r.diff)} 打不足</span>`
+                    : `<span>目標より +${r.diff} 打</span>`}
+            </div>
+        `;
+        c.appendChild(div);
+    });
+    goTo('screen-results');
+}
+
+// ============================================================
+// Utility
+// ============================================================
+function goTo(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    window.scrollTo(0, 0);
+}
+
+function resetGame() {
+    game.targets = [];
+    game.scores = game.players.map(() => Array(18).fill(null));
+    game.hiddenHoles = [];
+    goTo('screen-setup');
+}
+
+// Init
+updatePlayerInputs();
+</script>
+</body>
+</html>
