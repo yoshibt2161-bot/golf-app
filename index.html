@@ -297,6 +297,10 @@ function resetGame() {
     document.getElementById('player-count').value = '4';
     document.getElementById('course-par').value = '72';
     updatePlayerInputs();
+    for (let i = 0; i < 20; i++) {
+        const el = document.getElementById(`pname-${i}`);
+        if (el) el.value = '';
+    }
     goTo('screen-setup');
 }
 
@@ -698,12 +702,6 @@ function goTo(id) {
     window.scrollTo(0, 0);
 }
 
-function resetGame() {
-    game.targets = [];
-    game.scores = game.players.map(() => Array(18).fill(null));
-    game.hiddenHoles = [];
-    goTo('screen-setup');
-}
 
 // Init
 updatePlayerInputs();
