@@ -77,12 +77,33 @@
         .score-table thead th { background: rgba(0,0,0,0.3); }
         .score-table tfoot td { background: rgba(0,0,0,0.3); font-weight: 700; font-size: 0.8em; }
         .score-table .hole-num { color: #d8f8d8; }
-        .score-table input {
-            width: 44px; padding: 4px 2px; border-radius: 5px;
-            background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
-            color: #fff; text-align: center; font-size: 0.9em; margin: 0;
+        .score-cell {
+            width: 44px; padding: 6px 2px; border-radius: 5px;
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+            cursor: pointer; font-size: 0.9em; font-weight: 600; text-align: center;
+            transition: background 0.1s; user-select: none;
         }
-        .score-table input:focus { border-color: #fff; background: rgba(255,255,255,0.28); outline: none; }
+        .score-cell:active { background: rgba(255,255,255,0.28); }
+        .score-cell.empty { color: rgba(255,255,255,0.35); }
+        .score-cell.under { color: #90ee90; }
+        .score-cell.ev    { color: #ffd700; }
+        .score-cell.over  { color: #ffaaaa; }
+
+        /* Score popup */
+        #score-popup-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+            display: flex; align-items: center; justify-content: center; z-index: 200;
+        }
+        #score-popup {
+            background: linear-gradient(160deg, #4a9a58 0%, #6abc74 100%);
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 22px; padding: 24px 28px; text-align: center;
+            min-width: 240px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        #popup-label { font-size: 0.9em; color: #d8f8d8; margin-bottom: 18px; font-weight: 600; }
+        .popup-stepper { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 18px; }
+        .stepper-btn.big { width: 58px; height: 58px; font-size: 2em; border-radius: 50%; }
+        #popup-val { font-size: 2.4em; font-weight: 900; min-width: 70px; }
 
         /* Stepper (player tab view) */
         .stepper-list { display: flex; flex-direction: column; gap: 6px; }
@@ -250,6 +271,19 @@
     <button class="btn secondary" onclick="goTo('screen-declaration')">← 戻る</button>
 </div>
 
+<!-- Score input popup -->
+<div id="score-popup-overlay" style="display:none" onclick="closeScorePopup()">
+    <div id="score-popup" onclick="event.stopPropagation()">
+        <div id="popup-label"></div>
+        <div class="popup-stepper">
+            <button class="stepper-btn big" onclick="stepPopupScore(-1)">−</button>
+            <div class="stepper-val" id="popup-val">−</div>
+            <button class="stepper-btn big" onclick="stepPopupScore(1)">＋</button>
+        </div>
+        <button class="btn primary" onclick="closeScorePopup()">確定</button>
+    </div>
+</div>
+
 <!-- ===== SCREEN 4: Roulette ===== -->
 <div id="screen-roulette" class="screen">
     <h1>🎰 隠しホール抽選</h1>
@@ -399,13 +433,8 @@ function buildGridTable() {
         html += `<tr><td class="hole-num">${h + 1}</td>`;
         for (let p = 0; p < n; p++) {
             const v = game.scores[p][h];
-            const col = inputColor(v);
-            html += `<td><input type="number" min="-10" max="15"
-                value="${v !== null ? v : ''}"
-                id="gs-${p}-${h}"
-                inputmode="numeric"
-                style="color:${col}"
-                onchange="syncScore(${p},${h},this.value)"></td>`;
+            html += `<td><div class="score-cell ${cls(v)}" id="gc-${p}-${h}"
+                onclick="openScorePopup(${p},${h})">${v !== null ? fmt(v) : '−'}</div></td>`;
         }
         html += '</tr>';
     }
@@ -459,11 +488,47 @@ function switchPlayerTab(p) {
 // ============================================================
 // Score sync
 // ============================================================
+let _popupP = null, _popupH = null, _popupV = null;
+
+function openScorePopup(p, h) {
+    _popupP = p; _popupH = h;
+    _popupV = game.scores[p][h];
+    document.getElementById('popup-label').textContent = `${game.players[p]}　${h + 1}番ホール`;
+    const el = document.getElementById('popup-val');
+    el.textContent = _popupV !== null ? fmt(_popupV) : '−';
+    el.className = 'stepper-val ' + cls(_popupV);
+    document.getElementById('score-popup-overlay').style.display = 'flex';
+}
+
+function stepPopupScore(delta) {
+    const cur = _popupV === null ? 0 : _popupV;
+    _popupV = Math.max(-10, Math.min(15, cur + delta));
+    const el = document.getElementById('popup-val');
+    el.textContent = fmt(_popupV);
+    el.className = 'stepper-val ' + cls(_popupV);
+}
+
+function closeScorePopup() {
+    if (_popupP !== null && _popupH !== null) {
+        if (_popupV !== null) {
+            game.scores[_popupP][_popupH] = _popupV;
+            const cell = document.getElementById(`gc-${_popupP}-${_popupH}`);
+            if (cell) { cell.textContent = fmt(_popupV); cell.className = 'score-cell ' + cls(_popupV); }
+            const sv = document.getElementById(`sv-${_popupH}`);
+            if (sv && currentPlayerTab === _popupP) { sv.textContent = fmt(_popupV); sv.className = 'stepper-val ' + cls(_popupV); }
+            refreshGridTotal(_popupP);
+            updateMiniTotals();
+        }
+    }
+    document.getElementById('score-popup-overlay').style.display = 'none';
+    _popupP = null; _popupH = null; _popupV = null;
+}
+
 function syncScore(p, h, val) {
-    const v = val === '' ? null : parseInt(val);
+    const v = typeof val === 'number' ? val : (val === '' ? null : parseInt(val));
     game.scores[p][h] = isNaN(v) ? null : v;
-    const inp = document.getElementById(`gs-${p}-${h}`);
-    if (inp) inp.style.color = inputColor(v);
+    const cell = document.getElementById(`gc-${p}-${h}`);
+    if (cell) { cell.textContent = v !== null ? fmt(v) : '−'; cell.className = 'score-cell ' + cls(v); }
     refreshGridTotal(p);
     if (currentView === 'player' && currentPlayerTab === p) {
         const el = document.getElementById(`sv-${h}`);
@@ -478,8 +543,8 @@ function stepScore(p, h, delta) {
     game.scores[p][h] = nv;
     const el = document.getElementById(`sv-${h}`);
     if (el) { el.textContent = fmt(nv); el.className = 'stepper-val ' + cls(nv); }
-    const gi = document.getElementById(`gs-${p}-${h}`);
-    if (gi) { gi.value = nv; gi.style.color = inputColor(nv); }
+    const cell = document.getElementById(`gc-${p}-${h}`);
+    if (cell) { cell.textContent = fmt(nv); cell.className = 'score-cell ' + cls(nv); }
     refreshGridTotal(p);
     updateMiniTotals();
 }
