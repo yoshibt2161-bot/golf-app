@@ -412,7 +412,7 @@ function goToScores() {
         game.targets.push(val);
     }
     game.players.forEach((_, p) => {
-        if (!game.scores[p]) game.scores[p] = Array(18).fill(null);
+        if (!game.scores[p]) game.scores[p] = Array(18).fill(0);
     });
     buildGridTable();
     buildPlayerTabs();
