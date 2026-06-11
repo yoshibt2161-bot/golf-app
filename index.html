@@ -242,6 +242,10 @@
 <!-- ===== SCREEN 3: Score Entry ===== -->
 <div id="screen-scores" class="screen">
     <h1>📝 スコア入力</h1>
+    <div class="card" style="padding:10px 12px">
+        <button class="btn secondary" id="share-room-btn" style="margin:0" onclick="onShareRoomClick()">📡 みんなで同時入力（ルーム作成）</button>
+        <div id="sync-status" style="display:none; font-size:0.78em; color:#d8f8d8; margin-top:8px; text-align:center;"></div>
+    </div>
     <div class="view-toggle">
         <div class="tab-btn active" id="view-grid-btn" onclick="switchView('grid')">全体表示</div>
         <div class="tab-btn" id="view-player-btn" onclick="switchView('player')">プレイヤー別</div>
@@ -328,6 +332,7 @@ let currentPlayerTab = 0;
 
 function resetGame() {
     if (!confirm('ゲームをリセットしますか？\n入力済みのデータはすべて消えます。')) return;
+    leaveRoom();
     game = { players: [], coursePar: 72, targets: [], scores: [], hiddenHoles: [] };
     document.getElementById('player-count').value = '4';
     document.getElementById('course-par').value = '72';
@@ -420,6 +425,7 @@ function goToScores() {
     renderStepperList(0);
     updateMiniTotals();
     goTo('screen-scores');
+    if (_room) scheduleSync();
 }
 
 function buildGridTable() {
@@ -519,6 +525,7 @@ function closeScorePopup() {
             if (sv && currentPlayerTab === _popupP) { sv.textContent = fmt(_popupV); sv.className = 'stepper-val ' + cls(_popupV); }
             refreshGridTotal(_popupP);
             updateMiniTotals();
+            markCellDirty(_popupP, _popupH);
         }
     }
     document.getElementById('score-popup-overlay').style.display = 'none';
@@ -536,6 +543,7 @@ function syncScore(p, h, val) {
         if (el) { el.textContent = v !== null ? fmt(v) : '−'; el.className = 'stepper-val ' + cls(v); }
     }
     updateMiniTotals();
+    markCellDirty(p, h);
 }
 
 function stepScore(p, h, delta) {
@@ -548,6 +556,7 @@ function stepScore(p, h, delta) {
     if (cell) { cell.textContent = fmt(nv); cell.className = 'score-cell ' + cls(nv); }
     refreshGridTotal(p);
     updateMiniTotals();
+    markCellDirty(p, h);
 }
 
 function refreshGridTotal(p) {
@@ -600,6 +609,21 @@ function goToRoulette() {
             }
         }
     }
+    const bc = document.getElementById('hole-badges');
+    bc.innerHTML = '';
+    for (let i = 1; i <= 18; i++) {
+        const b = document.createElement('div');
+        b.className = 'hole-badge'; b.id = `badge-${i}`; b.textContent = i;
+        bc.appendChild(b);
+    }
+
+    // Another device already drew the hidden holes — show the result
+    if (_room && game.hiddenHoles.length === 4) {
+        showRouletteDone();
+        goTo('screen-roulette');
+        return;
+    }
+
     game.hiddenHoles = [];
     _selectedSoFar = [];
     _currentShowing = 1;
@@ -610,14 +634,6 @@ function goToRoulette() {
     rb.style.display = 'block'; rb.disabled = false;
     rb.textContent = '🎲 抽選スタート！'; rb.className = 'btn primary'; rb.onclick = startRoulette;
     document.getElementById('result-btn').style.display = 'none';
-
-    const bc = document.getElementById('hole-badges');
-    bc.innerHTML = '';
-    for (let i = 1; i <= 18; i++) {
-        const b = document.createElement('div');
-        b.className = 'hole-badge'; b.id = `badge-${i}`; b.textContent = i;
-        bc.appendChild(b);
-    }
     goTo('screen-roulette');
 }
 
@@ -679,6 +695,7 @@ function stopOneHole() {
     if (count >= 4) {
         // All 4 done
         game.hiddenHoles = [..._selectedSoFar].sort((a, b) => a - b);
+        if (_room) { _hiddenDirty = true; scheduleSync(); }
         btn.textContent = '確定！';
         document.getElementById('selected-holes-text').textContent =
             '🎯 隠しホール: ' + game.hiddenHoles.map(h => `${h}番`).join(' ・ ');
@@ -773,8 +790,273 @@ function goTo(id) {
 }
 
 
+// ============================================================
+// Realtime room sync (kvdb.io — free key-value store)
+// ============================================================
+const KVDB = 'https://kvdb.io';
+let _room = null;          // bucket id = room id
+let _nonce = null;         // last seen/written change marker
+let _dirtyCells = new Set(); // "p-h" cells edited locally, not yet pushed
+let _hiddenDirty = false;  // local roulette result not yet pushed
+let _pushTimer = null;
+let _pollTimer = null;
+let _pushing = false;
+
+function snapshotState(nonce) {
+    return JSON.stringify({
+        players: game.players, coursePar: game.coursePar, targets: game.targets,
+        scores: game.scores, hiddenHoles: game.hiddenHoles, nonce
+    });
+}
+
+function markCellDirty(p, h) {
+    if (!_room) return;
+    _dirtyCells.add(p + '-' + h);
+    scheduleSync();
+}
+
+function scheduleSync() {
+    if (!_room) return;
+    clearTimeout(_pushTimer);
+    _pushTimer = setTimeout(pushState, 600);
+}
+
+async function pushState() {
+    if (!_room) return;
+    if (_pushing) { scheduleSync(); return; }
+    _pushing = true;
+    try {
+        // Merge latest remote first so we don't clobber other devices' cells
+        try {
+            const res = await fetch(`${KVDB}/${_room}/game`, { cache: 'no-store' });
+            if (res.ok) mergeRemote(JSON.parse(await res.text()));
+        } catch (e) {}
+        const pushedCells = [..._dirtyCells];
+        _nonce = Math.random().toString(36).slice(2);
+        const put = await fetch(`${KVDB}/${_room}/game`, {
+            method: 'PUT', headers: { 'Content-Type': 'text/plain' },
+            body: snapshotState(_nonce)
+        });
+        if (put.ok) {
+            pushedCells.forEach(k => _dirtyCells.delete(k));
+            _hiddenDirty = false;
+        } else {
+            scheduleSyncRetry();
+        }
+    } catch (e) {
+        scheduleSyncRetry();
+    } finally {
+        _pushing = false;
+    }
+}
+
+function scheduleSyncRetry() {
+    clearTimeout(_pushTimer);
+    _pushTimer = setTimeout(pushState, 4000);
+}
+
+function startPolling() {
+    if (_pollTimer) clearInterval(_pollTimer);
+    _pollTimer = setInterval(pollRoom, 3000);
+}
+
+async function pollRoom() {
+    if (!_room || _pushing) return;
+    try {
+        const res = await fetch(`${KVDB}/${_room}/game`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const s = JSON.parse(await res.text());
+        if (s.nonce && s.nonce !== _nonce) {
+            _nonce = s.nonce;
+            mergeRemote(s);
+        }
+    } catch (e) {}
+}
+
+function mergeRemote(s) {
+    if (!s || !s.players || !s.players.length) return;
+    const structural =
+        JSON.stringify(s.players) !== JSON.stringify(game.players) ||
+        s.coursePar !== game.coursePar ||
+        JSON.stringify(s.targets) !== JSON.stringify(game.targets);
+
+    game.coursePar = s.coursePar;
+    game.players = s.players;
+    game.targets = s.targets;
+
+    // Merge scores: keep local cells edited but not yet pushed
+    const changed = [];
+    (s.scores || []).forEach((col, p) => {
+        if (!game.scores[p]) game.scores[p] = Array(18).fill(0);
+        for (let h = 0; h < 18; h++) {
+            if (_dirtyCells.has(p + '-' + h)) continue;
+            if (game.scores[p][h] !== col[h]) { game.scores[p][h] = col[h]; changed.push([p, h]); }
+        }
+    });
+    game.scores.length = game.players.length;
+
+    if (structural) {
+        rebuildAllUI();
+    } else if (changed.length) {
+        changed.forEach(([p, h]) => {
+            const cell = document.getElementById(`gc-${p}-${h}`);
+            if (cell) { cell.textContent = fmt(game.scores[p][h]); cell.className = 'score-cell ' + cls(game.scores[p][h]); }
+            if (currentPlayerTab === p) {
+                const sv = document.getElementById(`sv-${h}`);
+                if (sv) { sv.textContent = fmt(game.scores[p][h]); sv.className = 'stepper-val ' + cls(game.scores[p][h]); }
+            }
+        });
+        [...new Set(changed.map(c => c[0]))].forEach(p => refreshGridTotal(p));
+        updateMiniTotals();
+    }
+
+    // Hidden holes decided on another device's roulette
+    const remoteHidden = s.hiddenHoles || [];
+    if (!_spinning && !_hiddenDirty && remoteHidden.length === 4 &&
+        JSON.stringify(remoteHidden) !== JSON.stringify(game.hiddenHoles)) {
+        game.hiddenHoles = remoteHidden;
+        if (document.getElementById('screen-roulette').classList.contains('active')) {
+            showRouletteDone();
+        }
+    }
+}
+
+function rebuildAllUI() {
+    document.getElementById('player-count').value = String(game.players.length);
+    document.getElementById('course-par').value = String(game.coursePar);
+    updatePlayerInputs();
+    const container = document.getElementById('declaration-inputs');
+    container.innerHTML = '';
+    game.players.forEach((name, i) => {
+        const div = document.createElement('div');
+        div.innerHTML = `
+            <label>${name}の目標スコア（コースパー: ${game.coursePar}）</label>
+            <input type="number" id="target-${i}" value="${game.targets[i] || ''}" placeholder="例: 92" min="54" max="200">
+        `;
+        container.appendChild(div);
+    });
+    buildGridTable();
+    buildPlayerTabs();
+    renderStepperList(Math.min(currentPlayerTab, game.players.length - 1));
+    updateMiniTotals();
+}
+
+function showRouletteDone() {
+    document.querySelectorAll('.hole-badge').forEach(b => {
+        b.classList.remove('lit');
+        b.classList.toggle('selected', game.hiddenHoles.includes(parseInt(b.textContent)));
+    });
+    const disp = document.getElementById('roulette-display');
+    if (disp) { disp.textContent = '確定！'; disp.style.color = '#ffd700'; }
+    document.getElementById('selected-holes-text').textContent =
+        '🎯 隠しホール: ' + game.hiddenHoles.map(h => `${h}番`).join(' ・ ');
+    document.getElementById('roulette-result').style.display = 'block';
+    document.getElementById('result-btn').style.display = 'block';
+    document.getElementById('roulette-btn').style.display = 'none';
+}
+
+async function onShareRoomClick() {
+    if (_room) { shareRoom(); return; }
+    if (game.players.length === 0) { alert('先にプレイヤー設定と目標宣言を済ませてください'); return; }
+    const btn = document.getElementById('share-room-btn');
+    btn.disabled = true; btn.textContent = 'ルーム作成中…';
+    try {
+        const res = await fetch(KVDB, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'email=test@example.com'
+        });
+        if (!res.ok) throw new Error('bucket');
+        _room = (await res.text()).trim();
+        _nonce = Math.random().toString(36).slice(2);
+        const put = await fetch(`${KVDB}/${_room}/game`, {
+            method: 'PUT', headers: { 'Content-Type': 'text/plain' },
+            body: snapshotState(_nonce)
+        });
+        if (!put.ok) throw new Error('put');
+        history.replaceState(null, '', location.pathname + '?room=' + _room);
+        startPolling();
+        shareRoom();
+    } catch (e) {
+        _room = null;
+        alert('ルーム作成に失敗しました。電波の良い場所でもう一度お試しください。');
+    } finally {
+        btn.disabled = false;
+        updateSyncUI();
+    }
+}
+
+function roomUrl() { return location.origin + location.pathname + '?room=' + _room; }
+
+async function shareRoom() {
+    const url = roomUrl();
+    if (navigator.share) {
+        try { await navigator.share({ title: 'オネスティゴルフ', text: 'スコア入力に参加してね！', url }); return; }
+        catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try {
+        await navigator.clipboard.writeText(url);
+        alert('共有リンクをコピーしました！\nLINEなどに貼り付けて送ってください。\n\n' + url);
+    } catch (e) {
+        prompt('このリンクをコピーして共有してください', url);
+    }
+}
+
+function updateSyncUI() {
+    const btn = document.getElementById('share-room-btn');
+    const status = document.getElementById('sync-status');
+    if (_room) {
+        btn.textContent = '📡 参加リンクを共有';
+        status.style.display = 'block';
+        status.textContent = '✅ 共有中 — みんなの入力が自動で反映されます';
+    } else {
+        btn.textContent = '📡 みんなで同時入力（ルーム作成）';
+        status.style.display = 'none';
+    }
+}
+
+function leaveRoom() {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+    clearTimeout(_pushTimer);
+    _room = null; _nonce = null;
+    _dirtyCells.clear(); _hiddenDirty = false;
+    history.replaceState(null, '', location.pathname);
+    updateSyncUI();
+}
+
+async function joinRoomFromUrl() {
+    const id = new URLSearchParams(location.search).get('room');
+    if (!id) return;
+    try {
+        const res = await fetch(`${KVDB}/${id}/game`, { cache: 'no-store' });
+        if (!res.ok) throw new Error();
+        const s = JSON.parse(await res.text());
+        if (!s.players || !s.players.length) throw new Error();
+        _room = id;
+        _nonce = s.nonce || null;
+        game.players = s.players;
+        game.coursePar = s.coursePar;
+        game.targets = s.targets;
+        game.scores = s.scores || [];
+        game.hiddenHoles = s.hiddenHoles || [];
+        game.players.forEach((_, p) => { if (!game.scores[p]) game.scores[p] = Array(18).fill(0); });
+        rebuildAllUI();
+        goTo('screen-scores');
+        startPolling();
+        updateSyncUI();
+    } catch (e) {
+        alert('ルームに接続できませんでした。\nリンクが古いか、電波が不安定な可能性があります。');
+        history.replaceState(null, '', location.pathname);
+    }
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && _room) pollRoom();
+});
+
 // Init
 updatePlayerInputs();
+joinRoomFromUrl();
 </script>
 </body>
 </html>
