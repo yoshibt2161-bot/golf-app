@@ -609,6 +609,13 @@ function goToRoulette() {
         bc.appendChild(b);
     }
 
+    // Another device is currently spinning — watch instead
+    if (_room && _remoteRouletteOn && !_rouletteOn) {
+        startSpectating();
+        goTo('screen-roulette');
+        return;
+    }
+
     // Another device already drew the hidden holes — show the result
     if (_room && game.hiddenHoles.length === 4) {
         showRouletteDone();
@@ -632,9 +639,15 @@ function goToRoulette() {
 let _spinning = false;
 let _currentShowing = 1;
 let _selectedSoFar = [];
+let _rouletteOn = false;       // this device is running the roulette
+let _spectating = false;       // another device is running it — we're watching
+let _remoteRouletteOn = false;
+let _remotePicked = [];
 
 function startRoulette() {
     _spinning = true;
+    _rouletteOn = true;
+    if (_room) pushState();
     const btn = document.getElementById('roulette-btn');
     btn.textContent = '🛑 止める！　(1/4)';
     btn.className = 'btn stop';
@@ -687,7 +700,8 @@ function stopOneHole() {
     if (count >= 4) {
         // All 4 done
         game.hiddenHoles = [..._selectedSoFar].sort((a, b) => a - b);
-        if (_room) { _hiddenDirty = true; scheduleSync(); }
+        _rouletteOn = false;
+        if (_room) { _hiddenDirty = true; pushState(); }
         btn.textContent = '確定！';
         document.getElementById('selected-holes-text').textContent =
             '🎯 隠しホール: ' + game.hiddenHoles.map(h => `${h}番`).join(' ・ ');
@@ -696,6 +710,7 @@ function stopOneHole() {
         setTimeout(() => { disp.textContent = '確定！'; }, 500);
     } else {
         // Pause then spin again for next hole
+        if (_room) pushState();
         btn.textContent = `${count}/4 確定　あと ${4 - count} ホール`;
         setTimeout(() => {
             disp.style.color = '#90ee90';
@@ -797,7 +812,8 @@ let _pushing = false;
 function snapshotState(nonce) {
     return JSON.stringify({
         players: game.players, coursePar: game.coursePar, targets: game.targets,
-        scores: game.scores, hiddenHoles: game.hiddenHoles, nonce
+        scores: game.scores, hiddenHoles: game.hiddenHoles,
+        rouletteOn: _rouletteOn, picked: [..._selectedSoFar], nonce
     });
 }
 
@@ -902,6 +918,15 @@ function mergeRemote(s) {
         updateMiniTotals();
     }
 
+    // Roulette running on another device — spectator mode
+    if (!_rouletteOn && !_spinning) {
+        _remoteRouletteOn = s.rouletteOn === true;
+        _remotePicked = s.picked || [];
+        const onRouletteScreen = document.getElementById('screen-roulette').classList.contains('active');
+        if (_remoteRouletteOn && onRouletteScreen) startSpectating();
+        else if (!_remoteRouletteOn && _spectating) stopSpectating();
+    }
+
     // Hidden holes decided on another device's roulette
     const remoteHidden = s.hiddenHoles || [];
     if (!_spinning && !_hiddenDirty && remoteHidden.length === 4 &&
@@ -911,6 +936,45 @@ function mergeRemote(s) {
             showRouletteDone();
         }
     }
+}
+
+// ===== Spectator mode: watch another device's roulette =====
+function startSpectating() {
+    updateSpectatorBadges();
+    const btn = document.getElementById('roulette-btn');
+    btn.style.display = 'block';
+    btn.disabled = true;
+    btn.className = 'btn';
+    btn.textContent = `📱 他の端末で抽選中… (${_remotePicked.length}/4)`;
+    document.getElementById('result-btn').style.display = 'none';
+    document.getElementById('roulette-result').style.display = 'none';
+    if (_spectating) return;
+    _spectating = true;
+    spectatorLoop();
+}
+
+function stopSpectating() {
+    _spectating = false;
+}
+
+function spectatorLoop() {
+    if (!_spectating) return;
+    const avail = [];
+    for (let i = 1; i <= 18; i++) if (!_remotePicked.includes(i)) avail.push(i);
+    const n = avail[Math.floor(Math.random() * avail.length)];
+    const disp = document.getElementById('roulette-display');
+    if (disp) { disp.textContent = n; disp.style.color = '#90ee90'; }
+    document.querySelectorAll('.hole-badge:not(.selected)').forEach(b => b.classList.remove('lit'));
+    const lb = document.getElementById(`badge-${n}`);
+    if (lb && !lb.classList.contains('selected')) lb.classList.add('lit');
+    setTimeout(spectatorLoop, 100);
+}
+
+function updateSpectatorBadges() {
+    _remotePicked.forEach(h => {
+        const b = document.getElementById(`badge-${h}`);
+        if (b) { b.classList.remove('lit'); b.classList.add('selected'); }
+    });
 }
 
 function rebuildAllUI() {
@@ -933,6 +997,7 @@ function rebuildAllUI() {
 }
 
 function showRouletteDone() {
+    _spectating = false;
     document.querySelectorAll('.hole-badge').forEach(b => {
         b.classList.remove('lit');
         b.classList.toggle('selected', game.hiddenHoles.includes(parseInt(b.textContent)));
@@ -1011,6 +1076,8 @@ function leaveRoom() {
     clearTimeout(_pushTimer);
     _room = null; _nonce = null;
     _dirtyCells.clear(); _hiddenDirty = false;
+    _spectating = false; _remoteRouletteOn = false; _remotePicked = [];
+    _rouletteOn = false;
     history.replaceState(null, '', location.pathname);
     updateSyncUI();
 }
