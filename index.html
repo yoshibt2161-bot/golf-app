@@ -217,13 +217,6 @@
         </select>
         <div id="player-names"></div>
     </div>
-    <div class="card">
-        <h2>🏌️ コースパー</h2>
-        <div class="par-row">
-            <input type="number" id="course-par" value="72" min="54" max="90">
-            <span class="par-row-note">スコアは各ホールのパーに対する<br>+/− で入力します</span>
-        </div>
-    </div>
     <button class="btn primary" onclick="goToDeclaration()">次へ → 目標スコア宣言</button>
     <button class="btn secondary" onclick="resetGame()">🔄 リセット</button>
 </div>
@@ -335,7 +328,6 @@ function resetGame() {
     leaveRoom();
     game = { players: [], coursePar: 72, targets: [], scores: [], hiddenHoles: [] };
     document.getElementById('player-count').value = '4';
-    document.getElementById('course-par').value = '72';
     updatePlayerInputs();
     for (let i = 0; i < 20; i++) {
         const el = document.getElementById(`pname-${i}`);
@@ -384,7 +376,7 @@ function updatePlayerInputs() {
 
 function goToDeclaration() {
     const count = parseInt(document.getElementById('player-count').value);
-    game.coursePar = parseInt(document.getElementById('course-par').value) || 72;
+    game.coursePar = 72;
     game.players = [];
     for (let i = 0; i < count; i++) {
         const name = document.getElementById(`pname-${i}`)?.value?.trim() || `プレイヤー${i+1}`;
@@ -923,7 +915,6 @@ function mergeRemote(s) {
 
 function rebuildAllUI() {
     document.getElementById('player-count').value = String(game.players.length);
-    document.getElementById('course-par').value = String(game.coursePar);
     updatePlayerInputs();
     const container = document.getElementById('declaration-inputs');
     container.innerHTML = '';
