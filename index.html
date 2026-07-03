@@ -178,6 +178,22 @@
         .result-main.dmain { color: #ff9090; }
         .result-detail { font-size: 0.8em; color: rgba(255,255,255,0.72); display: flex; flex-wrap: wrap; gap: 6px; }
         .result-detail span { background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 10px; }
+
+        /* Per-hole breakdown (tap result card to open) */
+        .hd-hint { font-size: 0.72em; color: rgba(255,255,255,0.55); text-align: center; margin-top: 10px; }
+        .hole-detail { display: none; margin-top: 10px; }
+        .hole-detail.open { display: block; }
+        .hole-detail-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; }
+        .hd-cell { background: rgba(0,0,0,0.22); border-radius: 6px; padding: 4px 1px; text-align: center; border: 1px solid transparent; }
+        .hd-cell.hidden-hole { background: rgba(255,215,0,0.16); border-color: rgba(255,215,0,0.55); }
+        .hd-h { font-size: 0.6em; opacity: 0.6; }
+        .hd-s { font-size: 0.74em; font-weight: 700; white-space: nowrap; }
+        .hd-s .under { color: #90ee90; }
+        .hd-s .ev    { color: #ffd700; }
+        .hd-s .over  { color: #ffaaaa; }
+        .hd-orig { text-decoration: line-through; opacity: 0.55; }
+        .hd-arrow { color: #ffd700; font-size: 0.85em; }
+        .hd-note { font-size: 0.7em; color: rgba(255,255,255,0.6); margin-top: 6px; text-align: center; }
         .hidden-info { font-size: 0.82em; color: rgba(255,255,255,0.85); margin-bottom: 14px; padding: 8px 12px; background: rgba(255,215,0,.1); border-radius: 8px; border: 1px solid rgba(255,215,0,.3); }
         .info-text { font-size: 0.82em; color: #d8f8d8; margin-bottom: 12px; line-height: 1.5; }
     </style>
@@ -767,7 +783,7 @@ function goToResults() {
         const hiddenRel = hidden.reduce((sum, h) => sum + scores[h - 1], 0);
         const adjusted = game.coursePar + (totalRel - hiddenRel);
         const diff = adjusted - game.targets[p];
-        return { name, target: game.targets[p], totalActual, adjusted, diff, hiddenRel, dobon: diff < 0 };
+        return { name, target: game.targets[p], totalActual, adjusted, diff, hiddenRel, scores, dobon: diff < 0 };
     });
 
     // Non-dobon: ascending diff (closer to target = better). Dobon: descending diff (less negative = less dobon)
@@ -807,6 +823,19 @@ function goToResults() {
         if (r.hiddenRel > 0) forgive = `<span style="color:#90ee90">🎁 隠しホールで +${r.hiddenRel}打 帳消し！</span>`;
         else if (r.hiddenRel < 0) forgive = `<span style="color:#ff9090">😱 隠しホールでアンダー${Math.abs(r.hiddenRel)}打分 没収</span>`;
 
+        // Per-hole breakdown: hidden holes highlighted with original → E
+        let holeCells = '';
+        for (let h = 0; h < 18; h++) {
+            const v = r.scores[h];
+            const isHidden = hidden.includes(h + 1);
+            const scoreHtml = isHidden
+                ? (v !== 0
+                    ? `<span class="hd-orig ${cls(v)}">${fmt(v)}</span><span class="hd-arrow">→E</span>`
+                    : `<span class="ev">E</span>`)
+                : `<span class="${cls(v)}">${fmt(v)}</span>`;
+            holeCells += `<div class="hd-cell${isHidden ? ' hidden-hole' : ''}"><div class="hd-h">${h + 1}</div><div class="hd-s">${scoreHtml}</div></div>`;
+        }
+
         const div = document.createElement('div');
         div.className = cardCls;
         div.innerHTML = `
@@ -824,7 +853,17 @@ function goToResults() {
                     : `<span>目標より +${r.diff} 打</span>`}
                 ${forgive}
             </div>
+            <div class="hd-hint">▼ タップで各ホールのスコアを表示</div>
+            <div class="hole-detail">
+                <div class="hole-detail-grid">${holeCells}</div>
+                <div class="hd-note">金色のホール = 隠しホール（パー扱いに変更）</div>
+            </div>
         `;
+        div.style.cursor = 'pointer';
+        div.onclick = () => {
+            const open = div.querySelector('.hole-detail').classList.toggle('open');
+            div.querySelector('.hd-hint').textContent = open ? '▲ 閉じる' : '▼ タップで各ホールのスコアを表示';
+        };
         c.appendChild(div);
     });
 
